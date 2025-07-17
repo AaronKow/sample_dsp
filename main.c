@@ -11,8 +11,10 @@
 
 #define SAMPLE_RATE 44100
 #define BUFFER_SIZE 256
-#define EFFECT_DURATION_MS 5000
-#define SAMPLES_PER_EFFECT ((SAMPLE_RATE * EFFECT_DURATION_MS) / 1000)
+
+#define BUTTON_PIN_0 10
+#define BUTTON_PIN_1 11
+#define BUTTON_PIN_2 12
 
 int16_t sine_wave[BUFFER_SIZE];
 int16_t square_wave[BUFFER_SIZE];
@@ -50,30 +52,43 @@ int main() {
     i2s_program_init(pio, sm, offset, AUDIO_PIN_DATA, AUDIO_PIN_BCLK, AUDIO_PIN_LRCK);
 
     int sample_index = 0;
-    int effect = 0; // 0 = sine, 1 = square, 2 = saw
+    int effect = -1; // -1 = mute, 0 = sine, 1 = square, 2 = saw
     uint32_t effect_sample_counter = 0;
 
+    gpio_init(BUTTON_PIN_0);
+    gpio_set_dir(BUTTON_PIN_0, GPIO_IN);
+    gpio_pull_up(BUTTON_PIN_0);
+
+    gpio_init(BUTTON_PIN_1);
+    gpio_set_dir(BUTTON_PIN_1, GPIO_IN);
+    gpio_pull_up(BUTTON_PIN_1);
+
+    gpio_init(BUTTON_PIN_2);
+    gpio_set_dir(BUTTON_PIN_2, GPIO_IN);
+    gpio_pull_up(BUTTON_PIN_2);
+
     while (true) {
+        // Button logic: active low (pressed = 0)
+        if (!gpio_get(BUTTON_PIN_0)) effect = 0;
+        else if (!gpio_get(BUTTON_PIN_1)) effect = 1;
+        else if (!gpio_get(BUTTON_PIN_2)) effect = 2;
+        else effect = -1; // Mute if no button is pressed
+
         while (pio_sm_is_tx_fifo_full(pio, sm))
             tight_loop_contents();
 
-        int16_t sample;
+        int16_t sample = 0;
         if (effect == 0)
             sample = sine_wave[sample_index];
         else if (effect == 1)
             sample = square_wave[sample_index];
-        else
+        else if (effect == 2)
             sample = saw_wave[sample_index];
+        // else sample stays 0 (mute)
 
         uint32_t stereo_sample = ((uint32_t)sample << 16) | (sample & 0xFFFF);
         pio_sm_put_blocking(pio, sm, stereo_sample);
 
         sample_index = (sample_index + 1) % BUFFER_SIZE;
-        effect_sample_counter++;
-
-        if (effect_sample_counter >= SAMPLES_PER_EFFECT) {
-            effect = (effect + 1) % 3;
-            effect_sample_counter = 0;
-        }
     }
 }
